@@ -3,6 +3,8 @@ import axios from 'axios';
 import { AlertTriangle, Copy, Activity, ShieldCheck, Database, Server } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+
 function App() {
   const [anomalies, setAnomalies] = useState([]);
   const [duplicates, setDuplicates] = useState([]);
@@ -13,9 +15,9 @@ function App() {
     const fetchData = async () => {
       try {
         const [anomaliesRes, duplicatesRes, segmentsRes] = await Promise.all([
-          axios.get('http://127.0.0.1:8000/api/anomalies'),
-          axios.get('http://127.0.0.1:8000/api/duplicates'),
-          axios.get('http://127.0.0.1:8000/api/mp-segments')
+          axios.get(`${API_BASE}/api/anomalies`),
+          axios.get(`${API_BASE}/api/duplicates`),
+          axios.get(`${API_BASE}/api/mp-segments`)
         ]);
         
         setAnomalies(anomaliesRes.data);

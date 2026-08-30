@@ -5,38 +5,55 @@ import os
 
 app = FastAPI(title="SAKSHI-AI API")
 
-# Allow React frontend to communicate with this backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-def load_data(filepath):
+_cache: dict[str, list] = {}
+
+
+def load_data(filepath: str, cache_key: str) -> list:
+    if cache_key in _cache:
+        return _cache[cache_key]
     if os.path.exists(filepath):
         df = pd.read_csv(filepath).fillna("")
-        return df.to_dict(orient="records")
+        records = df.to_dict(orient="records")
+        _cache[cache_key] = records
+        return records
     return []
+
 
 @app.get("/")
 def health_check():
     return {"status": "SAKSHI-AI Backend is Live"}
 
+
 @app.get("/api/anomalies")
 def get_anomalies():
-    # Load the scored data and return only the flagged frauds (-1)
-    if os.path.exists("scored_expenditures.csv"):
-        df = pd.read_csv("scored_expenditures.csv")
-        anomalies = df[df['Anomaly_Flag'] == -1].fillna("")
-        return anomalies.to_dict(orient="records")
-    return {"error": "Scored data not found"}
+    cache_key = "anomalies"
+    if cache_key in _cache:
+        return _cache[cache_key]
+
+    filepath = "scored_expenditures.csv"
+    if os.path.exists(filepath):
+        df = pd.read_csv(filepath)
+        anomalies = df[df["Anomaly_Flag"] == -1].fillna("")
+        records = anomalies.to_dict(orient="records")
+        _cache[cache_key] = records
+        return records
+
+    return []
+
 
 @app.get("/api/duplicates")
 def get_duplicates():
-    return load_data("flagged_nlp_duplicates.csv")
+    return load_data("flagged_nlp_duplicates.csv", "duplicates")
+
 
 @app.get("/api/mp-segments")
 def get_mp_segments():
-    return load_data("mp_risk_segments.csv")
+    return load_data("mp_risk_segments.csv", "segments")
