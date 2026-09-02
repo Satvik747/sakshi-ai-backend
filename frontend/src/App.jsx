@@ -1,356 +1,1486 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
-import { AlertTriangle, Copy, Activity, ShieldCheck, Server, Search } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import React, { useEffect, useMemo, useState } from "react";
+import axios from "axios";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from "recharts";
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+import "./App.css";
 
-const inr = (n) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n || 0);
+const API =
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
+const getMPName = (row) =>
+  row["MP Name"] ||
+  row.MP_Name ||
+  row.Normalized_MP_Name ||
+  "Unknown";
+
+const getAmount = (row) =>
+  Number(row["Expenditure Amount (₹)"]) ||
+  Number(row.Expenditure_Amount) ||
+  Number(row.Amount) ||
+  0;
+
+const getVendor = (row) =>
+  row.Vendor ||
+  row["Vendor Name"] ||
+  row.Vendor_Name ||
+  "—";
+
+const getDistrict = (row) =>
+  row.IDA ||
+  row.District ||
+  row["District Name"] ||
+  "—";
+
+const getStatus = (row) =>
+  row["Payment Status"] ||
+  row.Payment_Status ||
+  row.Status ||
+  "—";
+
+const getReason = (row) =>
+  row.Flag_Reason ||
+  row.Reason ||
+  row.Anomaly_Reason ||
+  "Flagged";
+
+const getMinistry = (row) =>
+  row.Ministry ||
+  row["Ministry Name"] ||
+  row.Ministry_Name ||
+  row.Department ||
+  "Unknown Ministry";
+
+const formatMoney = (value) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(Number(value) || 0);
 
 function App() {
   const [anomalies, setAnomalies] = useState([]);
   const [duplicates, setDuplicates] = useState([]);
   const [segments, setSegments] = useState([]);
+
+  const [page, setPage] = useState("dashboard");
+
+  const [search, setSearch] = useState("");
+  const [reason, setReason] = useState("all");
+
+  const [analysisView, setAnalysisView] =
+    useState("ministry");
+
+  const [online, setOnline] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [backendUp, setBackendUp] = useState(true);
-  const [view, setView] = useState('ministry'); // ministry | district | mp
-  const [search, setSearch] = useState('');
-  
-  // State for the dropdown filter
-  const [reasonFilter, setReasonFilter] = useState('all');
 
   useEffect(() => {
-    const fetchData = async () => {
+    const loadData = async () => {
       try {
-        const [anomaliesRes, duplicatesRes, segmentsRes] = await Promise.all([
-          axios.get(`${API_BASE}/api/anomalies`),
-          axios.get(`${API_BASE}/api/duplicates`),
-          axios.get(`${API_BASE}/api/mp-segments`)
+        const [
+          anomalyResponse,
+          duplicateResponse,
+          segmentResponse,
+        ] = await Promise.all([
+          axios.get(`${API}/api/anomalies`),
+          axios.get(`${API}/api/duplicates`),
+          axios.get(`${API}/api/mp-segments`),
         ]);
-        setAnomalies(anomaliesRes.data);
-        setDuplicates(duplicatesRes.data);
-        setSegments(segmentsRes.data);
+
+        setAnomalies(
+          Array.isArray(anomalyResponse.data)
+            ? anomalyResponse.data
+            : []
+        );
+
+        setDuplicates(
+          Array.isArray(duplicateResponse.data)
+            ? duplicateResponse.data
+            : []
+        );
+
+        setSegments(
+          Array.isArray(segmentResponse.data)
+            ? segmentResponse.data
+            : []
+        );
+
+        setOnline(true);
       } catch (error) {
-        console.error('Error fetching data from backend:', error);
-        setBackendUp(false);
+        console.error(
+          "SAKSHI-AI API ERROR:",
+          error
+        );
+
+        setOnline(false);
       } finally {
         setLoading(false);
       }
     };
-    fetchData();
+
+    loadData();
   }, []);
 
-  const districtSummary = useMemo(() => {
-    const map = {};
-    anomalies.forEach((a) => {
-      const ida = a.IDA || 'Unknown';
-      if (!map[ida]) map[ida] = { IDA: ida, count: 0, total: 0 };
-      map[ida].count += 1;
-      map[ida].total += Number(a['Expenditure Amount (₹)']) || 0;
-    });
-    return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 15);
+  const flaggedAmount = useMemo(() => {
+    return anomalies.reduce(
+      (total, row) =>
+        total + getAmount(row),
+      0
+    );
   }, [anomalies]);
 
-  const filteredMpAnomalies = useMemo(() => {
-    if (!search.trim()) return [];
-    const q = search.toLowerCase();
-    return anomalies.filter((a) => (a.Normalized_MP_Name || '').toLowerCase().includes(q));
-  }, [anomalies, search]);
+  const reasons = useMemo(() => {
+    const values = anomalies
+      .map((row) => getReason(row))
+      .filter(Boolean)
+      .map((value) =>
+        String(value).trim()
+      )
+      .filter(Boolean);
 
-  const filteredMpDuplicates = useMemo(() => {
-    if (!search.trim()) return [];
-    const q = search.toLowerCase();
-    return duplicates.filter((d) => (d.MP_Name || '').toLowerCase().includes(q));
-  }, [duplicates, search]);
+    return [...new Set(values)];
+  }, [anomalies]);
 
-  const filteredMpSegment = useMemo(() => {
-    if (!search.trim()) return null;
-    const q = search.toLowerCase();
-    return segments.find((s) => (s.Normalized_MP_Name || '').toLowerCase().includes(q));
-  }, [segments, search]);
+  const districtData = useMemo(() => {
+    const grouped = {};
 
-  // FIX: Apply the filter to a dedicated variable so both the table AND the CSV use the filtered data
-  const displayedAnomalies = useMemo(() => {
-    return anomalies.filter(a => reasonFilter === 'all' || a.Flag_Reason === reasonFilter);
-  }, [anomalies, reasonFilter]);
+    anomalies.forEach((row) => {
+      const district =
+        getDistrict(row);
 
-  // FIX: CSV now downloads `displayedAnomalies` instead of all `anomalies`
-  const downloadCSV = () => {
-    const rows = displayedAnomalies.slice().sort((a, b) => (b['Expenditure Amount (₹)'] || 0) - (a['Expenditure Amount (₹)'] || 0));
-    const header = ['MP Name', 'Vendor', 'IDA', 'Amount', 'Status', 'Reason'];
-    const csv = [header.join(',')].concat(
-      rows.map(r => [r['MP Name'], r.Vendor, r.IDA, r['Expenditure Amount (₹)'], r['Payment Status'], r.Flag_Reason].map(v => `"${v ?? ''}"`).join(','))
-    ).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'flagged_anomalies.csv'; a.click();
+      if (!grouped[district]) {
+        grouped[district] = {
+          name: district,
+          count: 0,
+          amount: 0,
+        };
+      }
+
+      grouped[district].count += 1;
+      grouped[district].amount +=
+        getAmount(row);
+    });
+
+    return Object.values(grouped).sort(
+      (a, b) => b.amount - a.amount
+    );
+  }, [anomalies]);
+
+  const chartData = useMemo(() => {
+    const grouped = {};
+
+    if (analysisView === "all") {
+      segments.forEach((row) => {
+        const name =
+          row.Normalized_MP_Name ||
+          row.MP_Name ||
+          row["MP Name"] ||
+          "Unknown";
+
+        const amount =
+          Number(row.Total_Expenditure) ||
+          Number(row.Expenditure) ||
+          Number(row.Amount) ||
+          0;
+
+        grouped[name] =
+          (grouped[name] || 0) +
+          amount;
+      });
+    }
+
+    if (analysisView === "ministry") {
+      anomalies.forEach((row) => {
+        const name =
+          getMinistry(row);
+
+        grouped[name] =
+          (grouped[name] || 0) +
+          getAmount(row);
+      });
+    }
+
+    if (analysisView === "district") {
+      anomalies.forEach((row) => {
+        const name =
+          getDistrict(row);
+
+        grouped[name] =
+          (grouped[name] || 0) +
+          getAmount(row);
+      });
+    }
+
+    if (analysisView === "mp") {
+      anomalies.forEach((row) => {
+        const name =
+          getMPName(row);
+
+        grouped[name] =
+          (grouped[name] || 0) +
+          getAmount(row);
+      });
+    }
+
+    return Object.entries(grouped)
+      .map(([name, amount]) => ({
+        name,
+        amount,
+      }))
+      .sort(
+        (a, b) =>
+          b.amount - a.amount
+      )
+      .slice(0, 10);
+  }, [
+    anomalies,
+    segments,
+    analysisView,
+  ]);
+
+  const filteredAnomalies = useMemo(() => {
+    return anomalies.filter((row) => {
+      const text =
+        JSON.stringify(row).toLowerCase();
+
+      const matchesSearch =
+        !search ||
+        text.includes(
+          search.toLowerCase()
+        );
+
+      const matchesReason =
+        reason === "all" ||
+        getReason(row) === reason;
+
+      return (
+        matchesSearch &&
+        matchesReason
+      );
+    });
+  }, [
+    anomalies,
+    search,
+    reason,
+  ]);
+
+  const exportCSV = () => {
+    const headers = [
+      "MP Name",
+      "Vendor",
+      "IDA",
+      "Amount",
+      "Status",
+      "Reason",
+    ];
+
+    const rows = anomalies.map(
+      (row) =>
+        [
+          getMPName(row),
+          getVendor(row),
+          getDistrict(row),
+          getAmount(row),
+          getStatus(row),
+          getReason(row),
+        ]
+          .map(
+            (value) =>
+              `"${String(
+                value
+              ).replace(
+                /"/g,
+                '""'
+              )}"`
+          )
+          .join(",")
+    );
+
+    const csv = [
+      headers.join(","),
+      ...rows,
+    ].join("\n");
+
+    const blob = new Blob(
+      [csv],
+      {
+        type:
+          "text/csv;charset=utf-8;",
+      }
+    );
+
+    const url =
+      URL.createObjectURL(blob);
+
+    const link =
+      document.createElement("a");
+
+    link.href = url;
+    link.download =
+      "sakshi-ai-audit-report.csv";
+
+    document.body.appendChild(link);
+
+    link.click();
+
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-navy text-white">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-gold mb-4"></div>
-        <p className="text-xl font-semibold tracking-wide font-heading">Initializing SAKSHI-AI Engine...</p>
+      <div className="loading-screen">
+        <div className="loading-box">
+
+          <div className="loading-mark">
+            S
+          </div>
+
+          <div>
+            <strong>
+              SAKSHI-AI
+            </strong>
+
+            <span>
+              Loading audit console...
+            </span>
+          </div>
+
+        </div>
       </div>
     );
   }
 
+  const navigation = [
+    ["dashboard", "Overview"],
+    ["anomalies", "Anomalies"],
+    ["duplicates", "Duplicate Works"],
+    ["district", "District Analysis"],
+    ["mp", "MP Analysis"],
+  ];
+
   return (
-    <div className="min-h-screen bg-paper font-sans text-slate-800">
-      <nav className="bg-navy text-white px-8 py-4 shadow-md flex justify-between items-center">
-        <div className="flex items-center space-x-3">
-          <div className="p-2 bg-gold rounded-lg">
-            <ShieldCheck size={24} className="text-navy" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight font-heading">SAKSHI-AI</h1>
-            <p className="text-xs text-slate-300">Autonomous MP Fund Utilization & Fraud Auditing System</p>
-          </div>
-        </div>
-        <div className="flex items-center space-x-4 text-sm bg-navy-light px-4 py-2 rounded-full border border-white/10">
-          <span className={`flex items-center font-medium ${backendUp ? 'text-emerald-400' : 'text-rose-400'}`}>
-            <span className={`h-2.5 w-2.5 rounded-full mr-2 ${backendUp ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
-            {backendUp ? 'System Online' : 'Backend Unreachable'}
-          </span>
-          <span className="text-slate-500">|</span>
-          <span className="text-slate-300 flex items-center"><Server size={14} className="mr-1" /> FastAPI v1.0</span>
-        </div>
-      </nav>
+    <div className="app">
+      <aside className="sidebar">
 
-      <main className="p-8 max-w-7xl mx-auto">
-        <div className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-black text-navy font-heading">Executive Audit Overview</h2>
-            <p className="text-slate-500 text-sm mt-1">Real-time anomaly metrics and semantic fraud detection across parliamentary constituencies.</p>
+        <div className="brand">
+
+          <div className="brand-emblem-wrap">
+            <img
+              className="brand-emblem"
+              src="/Emblem_of_India.svg.webp"
+              alt="National Emblem of India"
+            />
           </div>
-          <div className="flex bg-white border border-slate-200 rounded-lg p-1">
-            {['ministry', 'district', 'mp'].map((v) => (
+
+          <div>
+
+            <div className="brand-name">
+              SAKSHI-AI
+            </div>
+
+            <div className="brand-subtitle">
+              PUBLIC EXPENDITURE
+              <br />
+              INTELLIGENCE
+            </div>
+
+          </div>
+
+        </div>
+
+        <div className="sidebar-section">
+          AUDIT
+        </div>
+
+        {navigation
+          .slice(0, 3)
+          .map(
+            ([id, label]) => (
               <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`px-4 py-1.5 text-sm font-semibold rounded-md capitalize transition-colors ${
-                  view === v ? 'bg-navy text-white' : 'text-slate-500 hover:text-navy'
+                key={id}
+                className={`nav-item ${
+                  page === id
+                    ? "active"
+                    : ""
                 }`}
+                onClick={() => {
+                  setPage(id);
+                  setSearch("");
+                  setReason("all");
+                }}
               >
-                {v === 'mp' ? 'MP View' : `${v} View`}
+                <span className="nav-marker" />
+
+                {label}
               </button>
-            ))}
-          </div>
+            )
+          )}
+
+        <div className="sidebar-section">
+          ANALYSIS
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-lg border-t-4 border-rose-500 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">High-Risk Anomalies</p>
-            <p className="text-3xl font-extrabold text-rose-600 mt-2 font-heading">{anomalies.length}</p>
-            <p className="text-xs text-slate-500 mt-1">Top 1% Isolation Forest outliers (amount, vendor frequency, district baseline)</p>
-          </div>
-          <div className="bg-white p-6 rounded-lg border-t-4 border-amber-500 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Disguised Duplicates</p>
-            <p className="text-3xl font-extrabold text-amber-600 mt-2 font-heading">{duplicates.length}</p>
-            <p className="text-xs text-slate-500 mt-1">TF-IDF semantic similarity &gt; 85%</p>
-          </div>
-          <div className="bg-white p-6 rounded-lg border-t-4 border-navy shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Constituencies Tracked</p>
-            <p className="text-3xl font-extrabold text-navy mt-2 font-heading">{segments.length}</p>
-            <p className="text-xs text-slate-500 mt-1">K-Means clustered segments</p>
-          </div>
+        {navigation
+          .slice(3)
+          .map(
+            ([id, label]) => (
+              <button
+                key={id}
+                className={`nav-item ${
+                  page === id
+                    ? "active"
+                    : ""
+                }`}
+                onClick={() => {
+                  setPage(id);
+                  setSearch("");
+                }}
+              >
+                <span className="nav-marker" />
+
+                {label}
+              </button>
+            )
+          )}
+
+        <div
+          className="sidebar-parliament-bg"
+          aria-hidden="true"
+        >
+          <img
+            src="/parliament.jpg"
+            alt=""
+          />
         </div>
 
-        {view === 'ministry' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-white p-6 rounded-lg border border-slate-200">
-              <h3 className="text-lg font-bold text-navy font-heading mb-4 flex items-center">
-                <Copy className="mr-2 text-amber-600" size={18} /> Disguised Project Duplicates
-              </h3>
-              <div className="overflow-auto max-h-[380px] border border-slate-100 rounded-lg">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 sticky top-0">
-                    <tr>
-                      <th className="p-3 font-semibold text-slate-600">MP Name</th>
-                      <th className="p-3 font-semibold text-slate-600">Match</th>
-                      <th className="p-3 font-semibold text-slate-600">Work Description</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {duplicates.map((dup, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/80">
-                        <td className="p-3 font-medium text-slate-900 capitalize">{dup.MP_Name}</td>
-                        <td className="p-3 text-rose-600 font-bold">{dup['Similarity_Score_%']}%</td>
-                        <td className="p-3 text-slate-600 truncate max-w-xs" title={dup.Work_A}>{dup.Work_A}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+        <div className="sidebar-bottom">
+
+          <div className="connection-status">
+
+            <span
+              className={`status-dot ${
+                online
+                  ? "online"
+                  : ""
+              }`}
+            />
+
+            <div>
+
+              <strong>
+                {online
+                  ? "System connected"
+                  : "System offline"}
+              </strong>
+
+              <small>
+                FastAPI backend
+              </small>
+
             </div>
 
-            <div className="bg-white p-6 rounded-lg border border-slate-200">
-              <h3 className="text-lg font-bold text-navy font-heading mb-4 flex items-center">
-                <Activity className="mr-2 text-navy" size={18} /> MP Fund Utilization Pacing
-              </h3>
-              <div className="h-[380px] pt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={segments.slice(0, 15)} margin={{ top: 10, right: 10, left: 10, bottom: 40 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                    <XAxis dataKey="Normalized_MP_Name" angle={-35} textAnchor="end" height={50} tick={{ fontSize: 10, fill: '#64748B' }} interval={0} />
-                    <YAxis tick={{ fontSize: 12, fill: '#64748B' }} tickFormatter={(v) => `₹${(v / 100000).toFixed(0)}L`} />
-                    <Tooltip cursor={{ fill: '#F1F5F9' }} formatter={(v) => inr(v)} contentStyle={{ backgroundColor: '#101534', color: '#fff', borderRadius: '8px', border: 'none', fontSize: '12px' }} />
-                    <Bar dataKey="Total_Expenditure" fill="#101534" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="bg-white p-6 rounded-lg border border-slate-200 lg:col-span-2">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-navy font-heading flex items-center">
-                  <AlertTriangle className="mr-2 text-rose-600" size={18} /> Flagged High-Risk Transactions
-                </h3>
-                
-                {/* Claude's Exact Visual UI for the Dropdown */}
-                <div className="flex items-center">
-                  <select value={reasonFilter} onChange={(e) => setReasonFilter(e.target.value)} className="text-xs border border-slate-200 rounded-md px-2 py-1.5 mr-2">
-                    <option value="all">All Reasons</option>
-                    <option value="Unusually large payment amount">Large Amount</option>
-                    <option value="Vendor receiving abnormally frequent payments">Vendor Frequency</option>
-                    <option value="Amount far from district average">District Deviation</option>
-                  </select>
-                  <button onClick={downloadCSV} className="text-xs font-semibold bg-navy text-white px-3 py-1.5 rounded-md hover:bg-navy-light">
-                    Export CSV
-                  </button>
-                </div>
-              </div>
-
-              <div className="overflow-auto max-h-[420px] border border-slate-100 rounded-lg">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 sticky top-0">
-                    <tr>
-                      <th className="p-3 font-semibold text-slate-600">MP Name</th>
-                      <th className="p-3 font-semibold text-slate-600">Vendor</th>
-                      <th className="p-3 font-semibold text-slate-600">IDA</th>
-                      <th className="p-3 font-semibold text-slate-600">Amount</th>
-                      <th className="p-3 font-semibold text-slate-600">Status</th>
-                      <th className="p-3 font-semibold text-slate-600">Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {displayedAnomalies // FIX: Map over the filtered anomalies, not the full list
-                      .slice()
-                      .sort((a, b) => (b['Expenditure Amount (₹)'] || 0) - (a['Expenditure Amount (₹)'] || 0))
-                      .slice(0, 50)
-                      .map((a, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/80">
-                          <td className="p-3 font-medium text-slate-900 capitalize">{a['MP Name']}</td>
-                          <td className="p-3 text-slate-600">{a.Vendor}</td>
-                          <td className="p-3 text-slate-600 truncate max-w-[160px]" title={a.IDA}>{a.IDA}</td>
-                          <td className="p-3 font-bold text-rose-600">{inr(a['Expenditure Amount (₹)'])}</td>
-                          <td className="p-3 text-slate-600">{a['Payment Status']}</td>
-                          <td className="p-3 text-xs text-slate-500 italic">{a.Flag_Reason}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-              {/* FIX: Caption updates correctly based on the filter */}
-              <p className="text-xs text-slate-400 mt-2 flex justify-between">
-                <span>
-                  Showing {Math.min(50, displayedAnomalies.length)} of {displayedAnomalies.length} flagged transactions 
-                  {reasonFilter !== 'all' ? ' matching this reason' : ''}.
-                </span>
-              </p>
-            </div>
           </div>
-        )}
 
-        {view === 'district' && (
-          <div className="bg-white p-6 rounded-lg border border-slate-200">
-            <h3 className="text-lg font-bold text-navy font-heading mb-4 flex items-center">
-              <Activity className="mr-2 text-navy" size={18} /> Risk by Implementing District Authority (IDA)
-            </h3>
-            <div className="overflow-auto max-h-[500px] border border-slate-100 rounded-lg">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 sticky top-0">
-                  <tr>
-                    <th className="p-3 font-semibold text-slate-600">IDA / District</th>
-                    <th className="p-3 font-semibold text-slate-600">Flagged Transactions</th>
-                    <th className="p-3 font-semibold text-slate-600">Total Flagged Value</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {districtSummary.map((d, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/80">
-                      <td className="p-3 font-medium text-slate-900">{d.IDA}</td>
-                      <td className="p-3 text-slate-600">{d.count}</td>
-                      <td className="p-3 font-bold text-rose-600">{inr(d.total)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <button
+            className="sidebar-export"
+            onClick={exportCSV}
+          >
+            Export audit data
+          </button>
+
+          <div className="sidebar-version">
+            SAKSHI-AI · v1.0
           </div>
-        )}
 
-        {view === 'mp' && (
-          <div className="bg-white p-6 rounded-lg border border-slate-200">
-            <div className="relative mb-6 max-w-md">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search MP name..."
-                className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-navy/30"
-              />
-            </div>
-            {!search.trim() && <p className="text-slate-400 text-sm">Start typing an MP's name to see their fund utilization, flagged transactions, and duplicate work proposals.</p>}
-            {search.trim() && (
-              <div className="space-y-6">
-                {filteredMpSegment && (
-                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
-                    <p className="text-sm text-slate-500">Fund Utilization Segment</p>
-                    <p className="text-lg font-bold text-navy font-heading capitalize">{filteredMpSegment.Normalized_MP_Name}</p>
-                    <p className="text-sm mt-1">{filteredMpSegment.Segment_Label} — {inr(filteredMpSegment.Total_Expenditure)} across {filteredMpSegment.Total_Works} works</p>
+        </div>
+
+      </aside>
+
+      <div className="main">
+
+        <header className="topbar">
+
+          <div className="breadcrumb">
+
+            <span>
+              SAKSHI-AI
+            </span>
+
+            <b>/</b>
+
+            {page === "dashboard" &&
+              "Overview"}
+
+            {page === "anomalies" &&
+              "Anomalies"}
+
+            {page === "duplicates" &&
+              "Duplicate Works"}
+
+            {page === "district" &&
+              "District Analysis"}
+
+            {page === "mp" &&
+              "MP Analysis"}
+
+          </div>
+
+          <div
+            className={`system-state ${
+              online
+                ? "online"
+                : ""
+            }`}
+          >
+
+            <i />
+
+            {online
+              ? "OPERATIONAL"
+              : "OFFLINE"}
+
+          </div>
+
+        </header>
+
+        <main className="content">
+
+          {page === "dashboard" && (
+            <>
+
+              <div className="dashboard-heading">
+
+                <div>
+
+                  <div className="eyebrow">
+                    EXECUTIVE AUDIT OVERVIEW
                   </div>
-                )}
-                <div>
-                  <p className="text-sm font-semibold text-slate-600 mb-2">Flagged Transactions ({filteredMpAnomalies.length})</p>
-                  {filteredMpAnomalies.length === 0 ? (
-                    <p className="text-sm text-slate-400">No anomalies found for this MP.</p>
-                  ) : (
-                    <div className="overflow-auto max-h-[300px] border border-slate-100 rounded-lg">
-                      <table className="w-full text-left text-sm">
-                        <tbody className="divide-y divide-slate-100">
-                          {filteredMpAnomalies.map((a, idx) => (
-                            <tr key={idx}>
-                              <td className="p-3 text-slate-600">{a.Vendor}</td>
-                              <td className="p-3 font-bold text-rose-600">{inr(a['Expenditure Amount (₹)'])}</td>
-                              <td className="p-3 text-slate-500">{a['Payment Status']}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+
+                  <h1>
+                    MP Fund Expenditure
+                  </h1>
+
+                  <p>
+                    Real-time anomaly metrics
+                    and semantic fraud detection
+                    across parliamentary
+                    constituencies.
+                  </p>
+
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-slate-600 mb-2">Duplicate Work Proposals ({filteredMpDuplicates.length})</p>
-                  {filteredMpDuplicates.length === 0 ? (
-                    <p className="text-sm text-slate-400">No duplicate proposals found for this MP.</p>
-                  ) : (
-                    filteredMpDuplicates.map((d, idx) => (
-                      <div key={idx} className="p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm mb-2">
-                        <span className="font-bold text-amber-700">{d['Similarity_Score_%']}% match</span> — {d.Work_A}
-                      </div>
-                    ))
-                  )}
+
+                <div className="view-switch">
+
+                  <button
+                    className={
+                      analysisView ===
+                      "all"
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setAnalysisView(
+                        "all"
+                      )
+                    }
+                  >
+                    All View
+                  </button>
+
+                  <button
+                    className={
+                      analysisView ===
+                      "ministry"
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setAnalysisView(
+                        "ministry"
+                      )
+                    }
+                  >
+                    Ministry View
+                  </button>
+
+                  <button
+                    className={
+                      analysisView ===
+                      "district"
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setAnalysisView(
+                        "district"
+                      )
+                    }
+                  >
+                    District View
+                  </button>
+
+                  <button
+                    className={
+                      analysisView ===
+                      "mp"
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setAnalysisView(
+                        "mp"
+                      )
+                    }
+                  >
+                    MP View
+                  </button>
+
                 </div>
+
               </div>
-            )}
-          </div>
+
+              <div className="metrics">
+
+                <Metric
+                  label="HIGH-RISK ANOMALIES"
+                  value={
+                    anomalies.length
+                  }
+                  text="Transactions requiring review"
+                  red
+                />
+
+                <Metric
+                  label="DISGUISED DUPLICATES"
+                  value={
+                    duplicates.length
+                  }
+                  text="Potentially repeated works"
+                  orange
+                />
+
+                <Metric
+                  label="CONSTITUENCIES TRACKED"
+                  value={
+                    segments.length
+                  }
+                  text="K-Means clustered records"
+                />
+
+                <Metric
+                  label="FLAGGED EXPENDITURE"
+                  value={formatMoney(
+                    flaggedAmount
+                  )}
+                  text="Total flagged transaction value"
+                />
+
+              </div>
+
+              <div className="dashboard-grid">
+
+                {}
+
+                <section className="panel">
+
+                  <PanelHeader
+                    title={
+                      analysisView ===
+                      "all"
+                        ? "MP Fund Utilization Pacing"
+                        : analysisView ===
+                          "ministry"
+                        ? "Ministry Expenditure"
+                        : analysisView ===
+                          "district"
+                        ? "District Expenditure"
+                        : "MP Expenditure"
+                    }
+                    subtitle="Top expenditure records"
+                  />
+
+                  <div className="chart">
+
+                    {chartData.length ===
+                    0 ? (
+
+                      <div className="empty">
+                        No chart data available.
+                      </div>
+
+                    ) : (
+
+                      <ResponsiveContainer
+                        width="100%"
+                        height="100%"
+                      >
+
+                        <BarChart
+                          data={chartData}
+                          margin={{
+                            top: 10,
+                            right: 15,
+                            left: 0,
+                            bottom: 90,
+                          }}
+                        >
+
+                          <CartesianGrid
+                            vertical={false}
+                            stroke="#e3e5e2"
+                            strokeDasharray="2 3"
+                          />
+
+                          <XAxis
+                            dataKey="name"
+                            angle={-40}
+                            textAnchor="end"
+                            interval={0}
+                            height={110}
+                            tick={{
+                              fontSize: 9,
+                              fill: "#686f6c",
+                            }}
+                            tickLine={false}
+                            axisLine={{
+                              stroke:
+                                "#d5d7d3",
+                            }}
+                          />
+
+                          <YAxis
+                            tick={{
+                              fontSize: 9,
+                              fill: "#737a77",
+                            }}
+                            tickLine={false}
+                            axisLine={false}
+                            tickFormatter={(
+                              value
+                            ) =>
+                              `₹${(
+                                value /
+                                100000
+                              ).toFixed(
+                                0
+                              )}L`
+                            }
+                          />
+
+                          <Tooltip
+                            formatter={(
+                              value
+                            ) => [
+                              formatMoney(
+                                value
+                              ),
+                              "Expenditure",
+                            ]}
+                            contentStyle={{
+                              border:
+                                "1px solid #d7d9d5",
+                              borderRadius:
+                                "3px",
+                              boxShadow:
+                                "none",
+                              fontSize:
+                                "10px",
+                            }}
+                          />
+
+                          <Bar
+                            dataKey="amount"
+                            fill="#293943"
+                            barSize={28}
+                          />
+
+                        </BarChart>
+
+                      </ResponsiveContainer>
+
+                    )}
+
+                  </div>
+
+                </section>
+                <section className="panel">
+
+                  <PanelHeader
+                    title="Audit Findings"
+                    subtitle="Current review queue"
+                  />
+
+                  <Finding
+                    label="Anomalous transactions"
+                    value={
+                      anomalies.length
+                    }
+                    onClick={() =>
+                      setPage(
+                        "anomalies"
+                      )
+                    }
+                  />
+
+                  <Finding
+                    label="Potential duplicate works"
+                    value={
+                      duplicates.length
+                    }
+                    onClick={() =>
+                      setPage(
+                        "duplicates"
+                      )
+                    }
+                  />
+
+                  <Finding
+                    label="Districts with findings"
+                    value={
+                      districtData.length
+                    }
+                    onClick={() =>
+                      setPage(
+                        "district"
+                      )
+                    }
+                  />
+
+                </section>
+
+              </div>
+
+              <section className="panel">
+
+                <PanelHeader
+                  title="Flagged High-Risk Transactions"
+                  subtitle="Highest priority records"
+                  action={
+                    <button
+                      className="view-all"
+                      onClick={() =>
+                        setPage(
+                          "anomalies"
+                        )
+                      }
+                    >
+                      View all
+                    </button>
+                  }
+                />
+
+                <TransactionTable
+                  rows={anomalies.slice(
+                    0,
+                    8
+                  )}
+                />
+
+              </section>
+
+            </>
+          )}
+
+          {page === "anomalies" && (
+            <>
+
+              <PageHeading
+                eyebrow="AUDIT / ANOMALY DETECTION"
+                title="Flagged High-Risk Transactions"
+                description="Review transactions identified as unusual by the anomaly detection engine."
+              />
+
+              <div className="filter-bar">
+
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) =>
+                    setSearch(
+                      e.target.value
+                    )
+                  }
+                  placeholder="Search MP, vendor or district..."
+                />
+
+                <select
+                  value={reason}
+                  onChange={(e) =>
+                    setReason(
+                      e.target.value
+                    )
+                  }
+                >
+
+                  <option value="all">
+                    All Reasons
+                  </option>
+
+                  {reasons.map(
+                    (item) => (
+                      <option
+                        key={item}
+                        value={item}
+                      >
+                        {item}
+                      </option>
+                    )
+                  )}
+
+                </select>
+
+                <button
+                  className="export-button"
+                  onClick={exportCSV}
+                >
+                  Export CSV
+                </button>
+
+              </div>
+
+              <section className="panel">
+
+                <TransactionTable
+                  rows={
+                    filteredAnomalies
+                  }
+                />
+
+              </section>
+
+            </>
+          )}
+
+          {page === "duplicates" && (
+            <>
+
+              <PageHeading
+                eyebrow="NLP REVIEW"
+                title="Potential Duplicate Records"
+                description="Semantic similarity analysis of expenditure works."
+              />
+
+              <section className="panel">
+
+                <div className="table-wrap">
+
+                  <table>
+
+                    <thead>
+
+                      <tr>
+
+                        <th>
+                          MP NAME
+                        </th>
+
+                        <th>
+                          MATCH
+                        </th>
+
+                        <th>
+                          WORK DESCRIPTION
+                        </th>
+
+                        <th>
+                          MATCHED WORK
+                        </th>
+
+                      </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                      {duplicates.length ===
+                      0 ? (
+
+                        <tr>
+
+                          <td
+                            colSpan="4"
+                            className="empty-cell"
+                          >
+                            No duplicate
+                            records found.
+                          </td>
+
+                        </tr>
+
+                      ) : (
+
+                        duplicates.map(
+                          (
+                            row,
+                            index
+                          ) => {
+
+                            const score =
+                              Number(
+                                row[
+                                  "Similarity_Score_%"
+                                ]
+                              ) ||
+                              Number(
+                                row[
+                                  "Similarity Score"
+                                ]
+                              ) ||
+                              Number(
+                                row.Score
+                              );
+
+                            return (
+                              <tr
+                                key={
+                                  index
+                                }
+                              >
+
+                                <td>
+                                  <strong>
+                                    {row.MP_Name ||
+                                      row[
+                                        "MP Name"
+                                      ] ||
+                                      "—"}
+                                  </strong>
+                                </td>
+
+                                <td className="dup-score">
+
+                                  {!Number.isNaN(
+                                    score
+                                  )
+                                    ? `${score.toFixed(
+                                        2
+                                      )}%`
+                                    : "—"}
+
+                                </td>
+
+                                <td>
+                                  {row.Work_A ||
+                                    row.Work_Description ||
+                                    row[
+                                      "Work Description"
+                                    ] ||
+                                    "—"}
+                                </td>
+
+                                <td>
+                                  {row.Work_B ||
+                                    row.Matched_Work ||
+                                    row[
+                                      "Matched Work"
+                                    ] ||
+                                    "—"}
+                                </td>
+
+                              </tr>
+                            );
+                          }
+                        )
+
+                      )}
+
+                    </tbody>
+
+                  </table>
+
+                </div>
+
+              </section>
+
+            </>
+          )}
+
+          {}
+
+          {page === "district" && (
+            <>
+
+              <PageHeading
+                eyebrow="ANALYSIS / DISTRICT"
+                title="District Analysis"
+                description="Flagged expenditure distributed across implementing districts."
+              />
+
+              <div className="district-table">
+
+                {districtData.length ===
+                0 ? (
+
+                  <div className="empty-box">
+                    No district data
+                    available.
+                  </div>
+
+                ) : (
+
+                  districtData.map(
+                    (
+                      district,
+                      index
+                    ) => (
+
+                      <div
+                        className="district-row"
+                        key={
+                          district.name
+                        }
+                      >
+
+                        <span className="district-index">
+                          {String(
+                            index + 1
+                          ).padStart(
+                            2,
+                            "0"
+                          )}
+                        </span>
+
+                        <strong>
+                          {district.name}
+                        </strong>
+
+                        <span>
+                          {
+                            district.count
+                          }{" "}
+                          flagged records
+                        </span>
+
+                        <b>
+                          {formatMoney(
+                            district.amount
+                          )}
+                        </b>
+
+                      </div>
+
+                    )
+                  )
+
+                )}
+
+              </div>
+
+            </>
+          )}
+
+          {}
+
+          {page === "mp" && (
+            <>
+
+              <PageHeading
+                eyebrow="ANALYSIS / MP"
+                title="MP Analysis"
+                description="Search and inspect flagged expenditure records by MP."
+              />
+
+              <div className="mp-search">
+
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) =>
+                    setSearch(
+                      e.target.value
+                    )
+                  }
+                  placeholder="Search MP name..."
+                />
+
+              </div>
+
+              {search ? (
+
+                <section className="panel">
+
+                  <TransactionTable
+                    rows={anomalies.filter(
+                      (row) =>
+                        getMPName(
+                          row
+                        )
+                          .toLowerCase()
+                          .includes(
+                            search.toLowerCase()
+                          )
+                    )}
+                  />
+
+                </section>
+
+              ) : (
+
+                <div className="empty-box">
+                  Enter an MP name to
+                  inspect expenditure
+                  records.
+                </div>
+
+              )}
+
+            </>
+          )}
+
+        </main>
+
+      </div>
+
+    </div>
+  );
+}
+
+function PageHeading({
+  eyebrow,
+  title,
+  description,
+}) {
+  return (
+    <div className="page-heading">
+
+      <span>
+        {eyebrow}
+      </span>
+
+      <h1>
+        {title}
+      </h1>
+
+      <p>
+        {description}
+      </p>
+
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  text,
+  red,
+  orange,
+}) {
+  return (
+    <div
+      className={`metric ${
+        red
+          ? "metric-red"
+          : ""
+      } ${
+        orange
+          ? "metric-orange"
+          : ""
+      }`}
+    >
+
+      <span>
+        {label}
+      </span>
+
+      <strong>
+        {value}
+      </strong>
+
+      <small>
+        {text}
+      </small>
+
+    </div>
+  );
+}
+
+function PanelHeader({
+  title,
+  subtitle,
+  action,
+}) {
+  return (
+    <div className="panel-header">
+
+      <div>
+
+        <h2>
+          {title}
+        </h2>
+
+        {subtitle && (
+          <span>
+            {subtitle}
+          </span>
         )}
-      </main>
+
+      </div>
+
+      {action}
+
+    </div>
+  );
+}
+
+function Finding({
+  label,
+  value,
+  onClick,
+}) {
+  return (
+    <button
+      className="finding"
+      onClick={onClick}
+    >
+
+      <div>
+
+        <span>
+          {label}
+        </span>
+
+        <strong>
+          {value}
+        </strong>
+
+      </div>
+
+      <b>
+        →
+      </b>
+
+    </button>
+  );
+}
+
+function TransactionTable({
+  rows,
+}) {
+  return (
+    <div className="table-wrap">
+
+      <table>
+
+        <thead>
+
+          <tr>
+
+            <th>
+              MP NAME
+            </th>
+
+            <th>
+              VENDOR
+            </th>
+
+            <th>
+              IDA
+            </th>
+
+            <th>
+              AMOUNT
+            </th>
+
+            <th>
+              STATUS
+            </th>
+
+            <th>
+              REASON
+            </th>
+
+          </tr>
+
+        </thead>
+
+        <tbody>
+
+          {rows.length === 0 ? (
+
+            <tr>
+
+              <td
+                colSpan="6"
+                className="empty-cell"
+              >
+                No records found.
+              </td>
+
+            </tr>
+
+          ) : (
+
+            rows.map(
+              (
+                row,
+                index
+              ) => (
+
+                <tr key={index}>
+
+                  <td>
+                    <strong>
+                      {getMPName(
+                        row
+                      )}
+                    </strong>
+                  </td>
+
+                  <td>
+                    {getVendor(
+                      row
+                    )}
+                  </td>
+
+                  <td>
+                    {getDistrict(
+                      row
+                    )}
+                  </td>
+
+                  <td className="amount">
+                    {formatMoney(
+                      getAmount(
+                        row
+                      )
+                    )}
+                  </td>
+
+                  <td>
+                    {getStatus(
+                      row
+                    )}
+                  </td>
+
+                  <td>
+                    <span className="reason-badge">
+                      {getReason(
+                        row
+                      )}
+                    </span>
+                  </td>
+
+                </tr>
+
+              )
+            )
+
+          )}
+
+        </tbody>
+
+      </table>
+
     </div>
   );
 }

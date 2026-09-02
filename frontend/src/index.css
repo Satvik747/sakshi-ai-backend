@@ -1,14 +1,9 @@
-@import "tailwindcss";
-
-@theme {
-  --font-heading: "Sora", system-ui, sans-serif;
-  --color-navy: #101534;
-  --color-navy-light: #1b2150;
-  --color-gold: #c9a227;
-  --color-paper: #f7f5f0;
+html,
+body,
+#root {
+  min-height: 100%;
 }
 
 body {
   margin: 0;
-  background: var(--color-paper);
 }
