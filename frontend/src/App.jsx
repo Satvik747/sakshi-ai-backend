@@ -16,6 +16,8 @@ function App() {
   const [backendUp, setBackendUp] = useState(true);
   const [view, setView] = useState('ministry'); // ministry | district | mp
   const [search, setSearch] = useState('');
+  
+  // State for the dropdown filter
   const [reasonFilter, setReasonFilter] = useState('all');
 
   useEffect(() => {
@@ -67,17 +69,24 @@ function App() {
     const q = search.toLowerCase();
     return segments.find((s) => (s.Normalized_MP_Name || '').toLowerCase().includes(q));
   }, [segments, search]);
+
+  // FIX: Apply the filter to a dedicated variable so both the table AND the CSV use the filtered data
+  const displayedAnomalies = useMemo(() => {
+    return anomalies.filter(a => reasonFilter === 'all' || a.Flag_Reason === reasonFilter);
+  }, [anomalies, reasonFilter]);
+
+  // FIX: CSV now downloads `displayedAnomalies` instead of all `anomalies`
   const downloadCSV = () => {
-  const rows = anomalies.slice().sort((a, b) => (b['Expenditure Amount (₹)'] || 0) - (a['Expenditure Amount (₹)'] || 0));
-  const header = ['MP Name', 'Vendor', 'IDA', 'Amount', 'Status', 'Reason'];
-  const csv = [header.join(',')].concat(
-    rows.map(r => [r['MP Name'], r.Vendor, r.IDA, r['Expenditure Amount (₹)'], r['Payment Status'], r.Flag_Reason].map(v => `"${v ?? ''}"`).join(','))
-  ).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'flagged_anomalies.csv'; a.click();
-};
+    const rows = displayedAnomalies.slice().sort((a, b) => (b['Expenditure Amount (₹)'] || 0) - (a['Expenditure Amount (₹)'] || 0));
+    const header = ['MP Name', 'Vendor', 'IDA', 'Amount', 'Status', 'Reason'];
+    const csv = [header.join(',')].concat(
+      rows.map(r => [r['MP Name'], r.Vendor, r.IDA, r['Expenditure Amount (₹)'], r['Payment Status'], r.Flag_Reason].map(v => `"${v ?? ''}"`).join(','))
+    ).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'flagged_anomalies.csv'; a.click();
+  };
 
   if (loading) {
     return (
@@ -196,21 +205,24 @@ function App() {
 
             <div className="bg-white p-6 rounded-lg border border-slate-200 lg:col-span-2">
               <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-navy font-heading flex items-center">
-                <AlertTriangle className="mr-2 text-rose-600" size={18} /> Flagged High-Risk Transactions
-              </h3>
-              <div className="flex items-center">
-                <select value={reasonFilter} onChange={(e) => setReasonFilter(e.target.value)} className="text-xs border border-slate-200 rounded-md px-2 py-1.5 mr-2">
-                  <option value="all">All Reasons</option>
-                  <option value="Unusually large payment amount">Large Amount</option>
-                  <option value="Vendor receiving abnormally frequent payments">Vendor Frequency</option>
-                  <option value="Amount far from district average">District Deviation</option>
-                </select>
-                <button onClick={downloadCSV} className="text-xs font-semibold bg-navy text-white px-3 py-1.5 rounded-md hover:bg-navy-light">
-                  Export CSV
-                </button>
+                <h3 className="text-lg font-bold text-navy font-heading flex items-center">
+                  <AlertTriangle className="mr-2 text-rose-600" size={18} /> Flagged High-Risk Transactions
+                </h3>
+                
+                {/* Claude's Exact Visual UI for the Dropdown */}
+                <div className="flex items-center">
+                  <select value={reasonFilter} onChange={(e) => setReasonFilter(e.target.value)} className="text-xs border border-slate-200 rounded-md px-2 py-1.5 mr-2">
+                    <option value="all">All Reasons</option>
+                    <option value="Unusually large payment amount">Large Amount</option>
+                    <option value="Vendor receiving abnormally frequent payments">Vendor Frequency</option>
+                    <option value="Amount far from district average">District Deviation</option>
+                  </select>
+                  <button onClick={downloadCSV} className="text-xs font-semibold bg-navy text-white px-3 py-1.5 rounded-md hover:bg-navy-light">
+                    Export CSV
+                  </button>
+                </div>
               </div>
-            </div>
+
               <div className="overflow-auto max-h-[420px] border border-slate-100 rounded-lg">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-slate-50 sticky top-0">
@@ -224,12 +236,11 @@ function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {anomalies
-                        .filter(a => reasonFilter === 'all' || a.Flag_Reason === reasonFilter)
-                        .slice()
-                        .sort((a, b) => (b['Expenditure Amount (₹)'] || 0) - (a['Expenditure Amount (₹)'] || 0))
-                        .slice(0, 50)
-                        .map((a, idx) => (
+                    {displayedAnomalies // FIX: Map over the filtered anomalies, not the full list
+                      .slice()
+                      .sort((a, b) => (b['Expenditure Amount (₹)'] || 0) - (a['Expenditure Amount (₹)'] || 0))
+                      .slice(0, 50)
+                      .map((a, idx) => (
                         <tr key={idx} className="hover:bg-slate-50/80">
                           <td className="p-3 font-medium text-slate-900 capitalize">{a['MP Name']}</td>
                           <td className="p-3 text-slate-600">{a.Vendor}</td>
@@ -242,7 +253,13 @@ function App() {
                   </tbody>
                 </table>
               </div>
-              <p className="text-xs text-slate-400 mt-2">Showing top 50 of {anomalies.length} flagged transactions by amount.</p>
+              {/* FIX: Caption updates correctly based on the filter */}
+              <p className="text-xs text-slate-400 mt-2 flex justify-between">
+                <span>
+                  Showing {Math.min(50, displayedAnomalies.length)} of {displayedAnomalies.length} flagged transactions 
+                  {reasonFilter !== 'all' ? ' matching this reason' : ''}.
+                </span>
+              </p>
             </div>
           </div>
         )}
@@ -287,9 +304,7 @@ function App() {
                 className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-navy/30"
               />
             </div>
-
             {!search.trim() && <p className="text-slate-400 text-sm">Start typing an MP's name to see their fund utilization, flagged transactions, and duplicate work proposals.</p>}
-
             {search.trim() && (
               <div className="space-y-6">
                 {filteredMpSegment && (
@@ -299,7 +314,6 @@ function App() {
                     <p className="text-sm mt-1">{filteredMpSegment.Segment_Label} — {inr(filteredMpSegment.Total_Expenditure)} across {filteredMpSegment.Total_Works} works</p>
                   </div>
                 )}
-
                 <div>
                   <p className="text-sm font-semibold text-slate-600 mb-2">Flagged Transactions ({filteredMpAnomalies.length})</p>
                   {filteredMpAnomalies.length === 0 ? (
@@ -320,7 +334,6 @@ function App() {
                     </div>
                   )}
                 </div>
-
                 <div>
                   <p className="text-sm font-semibold text-slate-600 mb-2">Duplicate Work Proposals ({filteredMpDuplicates.length})</p>
                   {filteredMpDuplicates.length === 0 ? (
