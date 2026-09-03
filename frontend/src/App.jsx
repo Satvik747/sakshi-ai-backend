@@ -56,7 +56,7 @@ const getMinistry = (row) =>
   row["Ministry Name"] ||
   row.Ministry_Name ||
   row.Department ||
-  "Unknown Ministry";
+  "MoSPI";
 
 const formatMoney = (value) =>
   new Intl.NumberFormat("en-IN", {
