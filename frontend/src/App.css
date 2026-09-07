@@ -903,6 +903,173 @@ tbody tr:hover td {
   background: #364b57;
 }
 
+.master-filter-bar {
+  display: flex;
+
+  flex-wrap: wrap;
+
+  align-items: center;
+
+  gap: 9px;
+
+  margin-bottom: 14px;
+
+  padding: 14px;
+
+  background: #fff;
+
+  border: 1px solid #d8dad7;
+
+  border-radius: 7px;
+}
+
+.master-filter-search {
+  height: 39px;
+
+  padding: 0 12px;
+
+  background: #fff;
+
+  border: 1px solid #d3d6d3;
+
+  border-radius: 5px;
+
+  outline: none;
+
+  color: #59615e;
+
+  font-size: 10px;
+
+  flex: 1 1 260px;
+
+  min-width: 220px;
+}
+
+.master-filter-search:focus {
+  border-color: #87949a;
+}
+
+.master-filter-bar select {
+  height: 39px;
+
+  padding: 0 12px;
+
+  background: #fff;
+
+  border: 1px solid #d3d6d3;
+
+  border-radius: 5px;
+
+  outline: none;
+
+  color: #59615e;
+
+  font-size: 10px;
+
+  width: 160px;
+}
+
+.master-filter-bar select:focus {
+  border-color: #87949a;
+}
+
+.master-select {
+  width: 190px;
+
+  flex: 0 0 190px;
+}
+
+.master-select input {
+  width: 100%;
+}
+
+.master-amount-input {
+  height: 39px;
+
+  width: 90px;
+
+  padding: 0 10px;
+
+  background: #fff;
+
+  border: 1px solid #d3d6d3;
+
+  border-radius: 5px;
+
+  outline: none;
+
+  color: #59615e;
+
+  font-size: 10px;
+}
+
+.master-amount-input:focus {
+  border-color: #87949a;
+}
+
+.clear-filters-button {
+  height: 39px;
+
+  padding: 0 14px;
+
+  border: 1px solid #d3d6d3;
+
+  border-radius: 5px;
+
+  background: #f4f5f3;
+
+  color: #59615e;
+
+  font-size: 9px;
+}
+
+.clear-filters-button:hover:not(:disabled) {
+  background: #e9ebe7;
+}
+
+.clear-filters-button:disabled {
+  opacity: 0.5;
+
+  cursor: default;
+}
+
+.master-summary {
+  display: flex;
+
+  gap: 24px;
+
+  margin-bottom: 14px;
+
+  font-size: 10px;
+
+  color: #59615e;
+}
+
+.master-summary strong {
+  color: #1c2622;
+
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .master-filter-bar {
+    flex-direction: column;
+
+    align-items: stretch;
+  }
+
+  .master-filter-search,
+  .master-select,
+  .master-filter-bar select,
+  .master-amount-input,
+  .clear-filters-button,
+  .master-filter-bar .export-button {
+    width: 100%;
+
+    flex: none;
+  }
+}
+
 .dup-score {
   color: #c23855 !important;
 
@@ -942,6 +1109,44 @@ tbody tr:hover td {
 
 .district-row:hover {
   background: #fafbf9;
+
+  cursor: pointer;
+}
+
+.district-row:focus-visible {
+  outline: 2px solid #89979c;
+
+  outline-offset: -2px;
+}
+
+.back-link {
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: 6px;
+
+  margin-bottom: 16px;
+
+  padding: 0;
+
+  background: none;
+
+  border: none;
+
+  color: #555e5b;
+
+  font-size: 10px;
+
+  font-weight: 600;
+
+  cursor: pointer;
+}
+
+.back-link:hover {
+  color: #1f2523;
+
+  text-decoration: underline;
 }
 
 .district-index {
@@ -975,11 +1180,17 @@ tbody tr:hover td {
 }
 
 .mp-search {
+  display: flex;
+
+  gap: 12px;
+
   margin-bottom: 20px;
 }
 
 .mp-search input {
-  width: 100%;
+  flex: 1 1 auto;
+
+  min-width: 0;
 
   height: 44px;
 
@@ -1000,6 +1211,89 @@ tbody tr:hover td {
 
 .mp-search input:focus {
   border-color: #89979c;
+}
+
+.searchable-select {
+  position: relative;
+
+  flex: 1 1 auto;
+
+  min-width: 0;
+}
+
+.searchable-select input {
+  width: 100%;
+
+  height: 44px;
+
+  padding: 0 14px;
+
+  background: #fff;
+
+  border: 1px solid #d4d7d4;
+
+  border-radius: 5px;
+
+  outline: none;
+
+  color: #555e5b;
+
+  font-size: 10px;
+}
+
+.searchable-select input:focus {
+  border-color: #89979c;
+}
+
+.searchable-select-menu {
+  position: absolute;
+
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+
+  max-height: 260px;
+
+  overflow-y: auto;
+
+  background: #fff;
+
+  border: 1px solid #d4d7d4;
+
+  border-radius: 5px;
+
+  box-shadow: 0 10px 24px rgba(41, 57, 67, 0.12);
+
+  z-index: 40;
+}
+
+.searchable-select-option {
+  padding: 11px 14px;
+
+  color: #555e5b;
+
+  font-size: 10px;
+
+  cursor: pointer;
+}
+
+.searchable-select-option:hover {
+  background: #f2f3f1;
+}
+
+.searchable-select-empty {
+  padding: 14px;
+
+  color: #999f9b;
+
+  font-size: 9px;
+  font-style: italic;
+}
+
+@media (max-width: 640px) {
+  .mp-search {
+    flex-direction: column;
+  }
 }
 
 .empty-box {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import {
   ResponsiveContainer,
@@ -73,10 +73,54 @@ function App() {
   const [page, setPage] = useState("dashboard");
 
   const [search, setSearch] = useState("");
+  const [districtSearch, setDistrictSearch] =
+    useState("");
+  const [selectedDistrict, setSelectedDistrict] =
+    useState(null);
+  const [selectedMP, setSelectedMP] =
+    useState(null);
   const [reason, setReason] = useState("all");
 
   const [analysisView, setAnalysisView] =
     useState("ministry");
+
+  // Master Analysis — combined filter state
+  const [masterQuery, setMasterQuery] = useState("");
+  const [masterMinistry, setMasterMinistry] = useState("all");
+  const [masterDistrict, setMasterDistrict] = useState("all");
+  const [masterMP, setMasterMP] = useState("all");
+  const [masterReason, setMasterReason] = useState("all");
+  const [masterStatus, setMasterStatus] = useState("all");
+  const [masterMinAmount, setMasterMinAmount] = useState("");
+  const [masterMaxAmount, setMasterMaxAmount] = useState("");
+
+  useEffect(() => {
+    setSelectedDistrict(null);
+    setDistrictSearch("");
+    setSelectedMP(null);
+
+    if (page !== "master") {
+      setMasterQuery("");
+      setMasterMinistry("all");
+      setMasterDistrict("all");
+      setMasterMP("all");
+      setMasterReason("all");
+      setMasterStatus("all");
+      setMasterMinAmount("");
+      setMasterMaxAmount("");
+    }
+  }, [page]);
+
+  const resetMasterFilters = () => {
+    setMasterQuery("");
+    setMasterMinistry("all");
+    setMasterDistrict("all");
+    setMasterMP("all");
+    setMasterReason("all");
+    setMasterStatus("all");
+    setMasterMinAmount("");
+    setMasterMaxAmount("");
+  };
 
   const [online, setOnline] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -148,6 +192,26 @@ function App() {
     return [...new Set(values)];
   }, [anomalies]);
 
+  const ministries = useMemo(() => {
+    const values = anomalies
+      .map((row) => getMinistry(row))
+      .filter(Boolean)
+      .map((value) => String(value).trim())
+      .filter(Boolean);
+
+    return [...new Set(values)].sort();
+  }, [anomalies]);
+
+  const statuses = useMemo(() => {
+    const values = anomalies
+      .map((row) => getStatus(row))
+      .filter(Boolean)
+      .map((value) => String(value).trim())
+      .filter((value) => value && value !== "—");
+
+    return [...new Set(values)].sort();
+  }, [anomalies]);
+
   const districtData = useMemo(() => {
     const grouped = {};
 
@@ -172,6 +236,18 @@ function App() {
       (a, b) => b.amount - a.amount
     );
   }, [anomalies]);
+
+  const filteredDistrictData = useMemo(() => {
+    if (!districtSearch) return districtData;
+
+    return districtData.filter((district) =>
+      district.name
+        .toLowerCase()
+        .includes(
+          districtSearch.toLowerCase()
+        )
+    );
+  }, [districtData, districtSearch]);
 
   const chartData = useMemo(() => {
     const grouped = {};
@@ -245,6 +321,152 @@ function App() {
     analysisView,
   ]);
 
+  const districtRecords = useMemo(() => {
+    if (!selectedDistrict) return [];
+
+    return anomalies.filter(
+      (row) =>
+        getDistrict(row) === selectedDistrict
+    );
+  }, [anomalies, selectedDistrict]);
+
+  const mpOptions = useMemo(() => {
+    const seen = new Map();
+
+    anomalies.forEach((row) => {
+      const name = getMPName(row);
+      const district = getDistrict(row);
+
+      if (name && name !== "Unknown" && !seen.has(name)) {
+        seen.set(name, district);
+      }
+    });
+
+    return Array.from(seen.entries())
+      .map(([name, district]) => ({
+        name,
+        district,
+      }))
+      .sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+  }, [anomalies]);
+
+  const mpData = useMemo(() => {
+    const grouped = {};
+
+    anomalies.forEach((row) => {
+      const name = getMPName(row);
+      const district = getDistrict(row);
+
+      if (!grouped[name]) {
+        grouped[name] = {
+          name,
+          district,
+          count: 0,
+          amount: 0,
+        };
+      }
+
+      grouped[name].count += 1;
+      grouped[name].amount +=
+        getAmount(row);
+    });
+
+    return Object.values(grouped).sort(
+      (a, b) => b.amount - a.amount
+    );
+  }, [anomalies]);
+
+  const filteredMpData = useMemo(() => {
+    if (!search) return mpData;
+
+    return mpData.filter((mp) =>
+      mp.name
+        .toLowerCase()
+        .includes(search.toLowerCase())
+    );
+  }, [mpData, search]);
+
+  const mpRecords = useMemo(() => {
+    if (!selectedMP) return [];
+
+    return anomalies.filter(
+      (row) =>
+        getMPName(row) === selectedMP
+    );
+  }, [anomalies, selectedMP]);
+
+  const masterFilteredRecords = useMemo(() => {
+    const min = masterMinAmount !== "" ? Number(masterMinAmount) : null;
+    const max = masterMaxAmount !== "" ? Number(masterMaxAmount) : null;
+    const q = masterQuery.trim().toLowerCase();
+
+    return anomalies.filter((row) => {
+      const amount = getAmount(row);
+
+      const matchesQuery =
+        !q || JSON.stringify(row).toLowerCase().includes(q);
+
+      const matchesMinistry =
+        masterMinistry === "all" || getMinistry(row) === masterMinistry;
+
+      const matchesDistrict =
+        masterDistrict === "all" || getDistrict(row) === masterDistrict;
+
+      const matchesMP =
+        masterMP === "all" || getMPName(row) === masterMP;
+
+      const matchesReason =
+        masterReason === "all" || getReason(row) === masterReason;
+
+      const matchesStatus =
+        masterStatus === "all" || getStatus(row) === masterStatus;
+
+      const matchesMin = min === null || Number.isNaN(min) || amount >= min;
+      const matchesMax = max === null || Number.isNaN(max) || amount <= max;
+
+      return (
+        matchesQuery &&
+        matchesMinistry &&
+        matchesDistrict &&
+        matchesMP &&
+        matchesReason &&
+        matchesStatus &&
+        matchesMin &&
+        matchesMax
+      );
+    });
+  }, [
+    anomalies,
+    masterQuery,
+    masterMinistry,
+    masterDistrict,
+    masterMP,
+    masterReason,
+    masterStatus,
+    masterMinAmount,
+    masterMaxAmount,
+  ]);
+
+  const masterFilteredAmount = useMemo(() => {
+    return masterFilteredRecords.reduce(
+      (total, row) => total + getAmount(row),
+      0
+    );
+  }, [masterFilteredRecords]);
+
+  const masterActiveFilterCount = [
+    masterQuery.trim() !== "",
+    masterMinistry !== "all",
+    masterDistrict !== "all",
+    masterMP !== "all",
+    masterReason !== "all",
+    masterStatus !== "all",
+    masterMinAmount !== "",
+    masterMaxAmount !== "",
+  ].filter(Boolean).length;
+
   const filteredAnomalies = useMemo(() => {
     return anomalies.filter((row) => {
       const text =
@@ -271,7 +493,7 @@ function App() {
     reason,
   ]);
 
-  const exportCSV = () => {
+  const exportCSV = (rowsToExport = anomalies, filename = "sakshi-ai-audit-report.csv") => {
     const headers = [
       "MP Name",
       "Vendor",
@@ -281,7 +503,7 @@ function App() {
       "Reason",
     ];
 
-    const rows = anomalies.map(
+    const rows = rowsToExport.map(
       (row) =>
         [
           getMPName(row),
@@ -323,8 +545,7 @@ function App() {
       document.createElement("a");
 
     link.href = url;
-    link.download =
-      "sakshi-ai-audit-report.csv";
+    link.download = filename;
 
     document.body.appendChild(link);
 
@@ -363,6 +584,7 @@ function App() {
     ["dashboard", "Overview"],
     ["anomalies", "Anomalies"],
     ["duplicates", "Duplicate Works"],
+    ["master", "Master Analysis"],
     ["district", "District Analysis"],
     ["mp", "MP Analysis"],
   ];
@@ -492,9 +714,9 @@ function App() {
 
           <button
             className="sidebar-export"
-            onClick={exportCSV}
+            onClick={() => exportCSV()}
           >
-            Export audit data
+            Export all audit data
           </button>
 
           <div className="sidebar-version">
@@ -525,6 +747,9 @@ function App() {
 
             {page === "duplicates" &&
               "Duplicate Works"}
+
+            {page === "master" &&
+              "Master Analysis"}
 
             {page === "district" &&
               "District Analysis"}
@@ -940,7 +1165,12 @@ function App() {
 
                 <button
                   className="export-button"
-                  onClick={exportCSV}
+                  onClick={() =>
+                    exportCSV(
+                      filteredAnomalies,
+                      "sakshi-ai-anomalies-filtered.csv"
+                    )
+                  }
                 >
                   Export CSV
                 </button>
@@ -1104,76 +1334,327 @@ function App() {
             </>
           )}
 
+          {page === "master" && (
+            <>
+
+              <PageHeading
+                eyebrow="ANALYSIS / MASTER VIEW"
+                title="Master Analysis"
+                description="Combine every filter — ministry, district, MP, reason, status and amount — to find any record without leaving this tab."
+              />
+
+              <div className="master-filter-bar">
+
+                <input
+                  type="text"
+                  className="master-filter-search"
+                  value={masterQuery}
+                  onChange={(e) =>
+                    setMasterQuery(e.target.value)
+                  }
+                  placeholder="Search anything — MP, vendor, district, ministry..."
+                />
+
+                <SearchableSelect
+                  value={
+                    masterMinistry === "all"
+                      ? ""
+                      : masterMinistry
+                  }
+                  onChange={(value) =>
+                    setMasterMinistry(value || "all")
+                  }
+                  placeholder="Ministry"
+                  allLabel="All Ministries"
+                  className="master-select"
+                  options={ministries.map((m) => ({
+                    value: m,
+                    label: m,
+                  }))}
+                />
+
+                <SearchableSelect
+                  value={
+                    masterDistrict === "all"
+                      ? ""
+                      : masterDistrict
+                  }
+                  onChange={(value) =>
+                    setMasterDistrict(value || "all")
+                  }
+                  placeholder="District / IDA"
+                  allLabel="All Districts"
+                  className="master-select"
+                  options={districtData.map((d) => ({
+                    value: d.name,
+                    label: d.name,
+                  }))}
+                />
+
+                <SearchableSelect
+                  value={masterMP === "all" ? "" : masterMP}
+                  onChange={(value) =>
+                    setMasterMP(value || "all")
+                  }
+                  placeholder="MP Name"
+                  allLabel="All MPs"
+                  className="master-select"
+                  options={mpOptions.map((opt) => ({
+                    value: opt.name,
+                    label: `${opt.name} — ${opt.district}`,
+                  }))}
+                />
+
+                <select
+                  value={masterReason}
+                  onChange={(e) =>
+                    setMasterReason(e.target.value)
+                  }
+                >
+                  <option value="all">All Reasons</option>
+
+                  {reasons.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={masterStatus}
+                  onChange={(e) =>
+                    setMasterStatus(e.target.value)
+                  }
+                >
+                  <option value="all">All Statuses</option>
+
+                  {statuses.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  type="number"
+                  className="master-amount-input"
+                  value={masterMinAmount}
+                  onChange={(e) =>
+                    setMasterMinAmount(e.target.value)
+                  }
+                  placeholder="Min ₹"
+                />
+
+                <input
+                  type="number"
+                  className="master-amount-input"
+                  value={masterMaxAmount}
+                  onChange={(e) =>
+                    setMasterMaxAmount(e.target.value)
+                  }
+                  placeholder="Max ₹"
+                />
+
+                <button
+                  className="export-button"
+                  onClick={() =>
+                    exportCSV(
+                      masterFilteredRecords,
+                      "sakshi-ai-master-analysis-filtered.csv"
+                    )
+                  }
+                >
+                  Export CSV
+                </button>
+
+                <button
+                  className="clear-filters-button"
+                  onClick={resetMasterFilters}
+                  disabled={masterActiveFilterCount === 0}
+                >
+                  Clear filters
+                  {masterActiveFilterCount > 0
+                    ? ` (${masterActiveFilterCount})`
+                    : ""}
+                </button>
+
+              </div>
+
+              <div className="master-summary">
+
+                <span>
+                  <strong>
+                    {masterFilteredRecords.length}
+                  </strong>{" "}
+                  of {anomalies.length} records match
+                </span>
+
+                <span>
+                  <strong>
+                    {formatMoney(masterFilteredAmount)}
+                  </strong>{" "}
+                  in matched expenditure
+                </span>
+
+              </div>
+
+              <section className="panel">
+
+                <TransactionTable
+                  rows={masterFilteredRecords}
+                />
+
+              </section>
+
+            </>
+          )}
+
           {}
 
           {page === "district" && (
             <>
 
-              <PageHeading
-                eyebrow="ANALYSIS / DISTRICT"
-                title="District Analysis"
-                description="Flagged expenditure distributed across implementing districts."
-              />
+              {selectedDistrict ? (
 
-              <div className="district-table">
+                <>
 
-                {districtData.length ===
-                0 ? (
+                  <PageHeading
+                    eyebrow="ANALYSIS / DISTRICT"
+                    title={selectedDistrict}
+                    description={`${districtRecords.length} flagged records for this district.`}
+                  />
 
-                  <div className="empty-box">
-                    No district data
-                    available.
+                  <button
+                    className="back-link"
+                    onClick={() =>
+                      setSelectedDistrict(
+                        null
+                      )
+                    }
+                  >
+                    ← Back to all districts
+                  </button>
+
+                  <section className="panel">
+
+                    <TransactionTable
+                      rows={
+                        districtRecords
+                      }
+                    />
+
+                  </section>
+
+                </>
+
+              ) : (
+
+                <>
+
+                  <PageHeading
+                    eyebrow="ANALYSIS / DISTRICT"
+                    title="District Analysis"
+                    description="Flagged expenditure distributed across implementing districts."
+                  />
+
+                  <div className="mp-search">
+
+                    <SearchableSelect
+                      value={districtSearch}
+                      onChange={setDistrictSearch}
+                      placeholder="Search district name..."
+                      allLabel="All Districts"
+                      options={districtData.map(
+                        (d) => ({
+                          value: d.name,
+                          label: d.name,
+                        })
+                      )}
+                    />
+
                   </div>
 
-                ) : (
+                  <div className="district-table">
 
-                  districtData.map(
-                    (
-                      district,
-                      index
-                    ) => (
+                    {filteredDistrictData.length ===
+                    0 ? (
 
-                      <div
-                        className="district-row"
-                        key={
-                          district.name
-                        }
-                      >
-
-                        <span className="district-index">
-                          {String(
-                            index + 1
-                          ).padStart(
-                            2,
-                            "0"
-                          )}
-                        </span>
-
-                        <strong>
-                          {district.name}
-                        </strong>
-
-                        <span>
-                          {
-                            district.count
-                          }{" "}
-                          flagged records
-                        </span>
-
-                        <b>
-                          {formatMoney(
-                            district.amount
-                          )}
-                        </b>
-
+                      <div className="empty-box">
+                        No district data
+                        available.
                       </div>
 
-                    )
-                  )
+                    ) : (
 
-                )}
+                      filteredDistrictData.map(
+                        (
+                          district,
+                          index
+                        ) => (
 
-              </div>
+                          <div
+                            className="district-row"
+                            key={
+                              district.name
+                            }
+                            role="button"
+                            tabIndex={0}
+                            onClick={() =>
+                              setSelectedDistrict(
+                                district.name
+                              )
+                            }
+                            onKeyDown={(e) => {
+                              if (
+                                e.key ===
+                                  "Enter" ||
+                                e.key === " "
+                              ) {
+                                setSelectedDistrict(
+                                  district.name
+                                );
+                              }
+                            }}
+                          >
+
+                            <span className="district-index">
+                              {String(
+                                index + 1
+                              ).padStart(
+                                2,
+                                "0"
+                              )}
+                            </span>
+
+                            <strong>
+                              {district.name}
+                            </strong>
+
+                            <span>
+                              {
+                                district.count
+                              }{" "}
+                              flagged records
+                            </span>
+
+                            <b>
+                              {formatMoney(
+                                district.amount
+                              )}
+                            </b>
+
+                          </div>
+
+                        )
+                      )
+
+                    )}
+
+                  </div>
+
+                </>
+
+              )}
 
             </>
           )}
@@ -1183,53 +1664,145 @@ function App() {
           {page === "mp" && (
             <>
 
-              <PageHeading
-                eyebrow="ANALYSIS / MP"
-                title="MP Analysis"
-                description="Search and inspect flagged expenditure records by MP."
-              />
+              {selectedMP ? (
 
-              <div className="mp-search">
+                <>
 
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) =>
-                    setSearch(
-                      e.target.value
-                    )
-                  }
-                  placeholder="Search MP name..."
-                />
-
-              </div>
-
-              {search ? (
-
-                <section className="panel">
-
-                  <TransactionTable
-                    rows={anomalies.filter(
-                      (row) =>
-                        getMPName(
-                          row
-                        )
-                          .toLowerCase()
-                          .includes(
-                            search.toLowerCase()
-                          )
-                    )}
+                  <PageHeading
+                    eyebrow="ANALYSIS / MP"
+                    title={selectedMP}
+                    description={`${mpRecords.length} flagged records for this MP.`}
                   />
 
-                </section>
+                  <button
+                    className="back-link"
+                    onClick={() =>
+                      setSelectedMP(
+                        null
+                      )
+                    }
+                  >
+                    ← Back to all MPs
+                  </button>
+
+                  <section className="panel">
+
+                    <TransactionTable
+                      rows={
+                        mpRecords
+                      }
+                    />
+
+                  </section>
+
+                </>
 
               ) : (
 
-                <div className="empty-box">
-                  Enter an MP name to
-                  inspect expenditure
-                  records.
-                </div>
+                <>
+
+                  <PageHeading
+                    eyebrow="ANALYSIS / MP"
+                    title="MP Analysis"
+                    description="Search and inspect flagged expenditure records by MP."
+                  />
+
+                  <div className="mp-search">
+
+                    <SearchableSelect
+                      value={search}
+                      onChange={setSearch}
+                      placeholder="Search MP name..."
+                      allLabel="All MPs"
+                      options={mpOptions.map(
+                        (opt) => ({
+                          value: opt.name,
+                          label: `${opt.name} — ${opt.district}`,
+                        })
+                      )}
+                    />
+
+                  </div>
+
+                  <div className="district-table">
+
+                    {filteredMpData.length ===
+                    0 ? (
+
+                      <div className="empty-box">
+                        No MP data
+                        available.
+                      </div>
+
+                    ) : (
+
+                      filteredMpData.map(
+                        (
+                          mp,
+                          index
+                        ) => (
+
+                          <div
+                            className="district-row"
+                            key={
+                              mp.name
+                            }
+                            role="button"
+                            tabIndex={0}
+                            onClick={() =>
+                              setSelectedMP(
+                                mp.name
+                              )
+                            }
+                            onKeyDown={(e) => {
+                              if (
+                                e.key ===
+                                  "Enter" ||
+                                e.key === " "
+                              ) {
+                                setSelectedMP(
+                                  mp.name
+                                );
+                              }
+                            }}
+                          >
+
+                            <span className="district-index">
+                              {String(
+                                index + 1
+                              ).padStart(
+                                2,
+                                "0"
+                              )}
+                            </span>
+
+                            <strong>
+                              {mp.name}
+                            </strong>
+
+                            <span>
+                              {
+                                mp.count
+                              }{" "}
+                              flagged records
+                            </span>
+
+                            <b>
+                              {formatMoney(
+                                mp.amount
+                              )}
+                            </b>
+
+                          </div>
+
+                        )
+                      )
+
+                    )}
+
+                  </div>
+
+                </>
 
               )}
 
@@ -1239,6 +1812,119 @@ function App() {
         </main>
 
       </div>
+
+    </div>
+  );
+}
+
+function SearchableSelect({
+  value,
+  onChange,
+  options,
+  placeholder,
+  allLabel,
+  className,
+}) {
+  const [query, setQuery] = useState(value || "");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    setQuery(value || "");
+  }, [value]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (
+        wrapRef.current &&
+        !wrapRef.current.contains(e.target)
+      ) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener(
+      "mousedown",
+      handleClickOutside
+    );
+
+    return () =>
+      document.removeEventListener(
+        "mousedown",
+        handleClickOutside
+      );
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!query) return options;
+
+    return options.filter((opt) =>
+      opt.label
+        .toLowerCase()
+        .includes(query.toLowerCase())
+    );
+  }, [options, query]);
+
+  const handleSelect = (opt) => {
+    setQuery(opt.value ? opt.label : "");
+    onChange(opt.value);
+    setOpen(false);
+  };
+
+  return (
+    <div
+      className={`searchable-select ${
+        className || ""
+      }`}
+      ref={wrapRef}
+    >
+      <input
+        type="text"
+        value={query}
+        placeholder={placeholder}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+      />
+
+      {open && (
+        <div className="searchable-select-menu">
+
+          <div
+            className="searchable-select-option"
+            onMouseDown={() =>
+              handleSelect({
+                value: "",
+                label: allLabel,
+              })
+            }
+          >
+            {allLabel}
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="searchable-select-empty">
+              No matches
+            </div>
+          ) : (
+            filtered.map((opt) => (
+              <div
+                key={opt.value}
+                className="searchable-select-option"
+                onMouseDown={() =>
+                  handleSelect(opt)
+                }
+              >
+                {opt.label}
+              </div>
+            ))
+          )}
+
+        </div>
+      )}
 
     </div>
   );
