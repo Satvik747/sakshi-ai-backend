@@ -95,9 +95,15 @@ function App() {
   const [masterMaxAmount, setMasterMaxAmount] = useState("");
 
   useEffect(() => {
-    setSelectedDistrict(null);
     setDistrictSearch("");
-    setSelectedMP(null);
+
+    if (page !== "district") {
+      setSelectedDistrict(null);
+    }
+
+    if (page !== "mp") {
+      setSelectedMP(null);
+    }
 
     if (page !== "master") {
       setMasterQuery("");
@@ -120,6 +126,11 @@ function App() {
     setMasterStatus("all");
     setMasterMinAmount("");
     setMasterMaxAmount("");
+  };
+
+  const goToMP = (name) => {
+    setSelectedMP(name);
+    setPage("mp");
   };
 
   const [online, setOnline] = useState(false);
@@ -665,6 +676,8 @@ function App() {
                 onClick={() => {
                   setPage(id);
                   setSearch("");
+                  setSelectedMP(null);
+                  setSelectedDistrict(null);
                 }}
               >
                 <span className="nav-marker" />
@@ -1108,6 +1121,10 @@ function App() {
                     0,
                     8
                   )}
+                  onMPClick={goToMP}
+                  onRowClick={(row) =>
+                    goToMP(getMPName(row))
+                  }
                 />
 
               </section>
@@ -1182,6 +1199,10 @@ function App() {
                 <TransactionTable
                   rows={
                     filteredAnomalies
+                  }
+                  onMPClick={goToMP}
+                  onRowClick={(row) =>
+                    goToMP(getMPName(row))
                   }
                 />
 
@@ -2051,6 +2072,8 @@ function Finding({
 
 function TransactionTable({
   rows,
+  onMPClick,
+  onRowClick,
 }) {
   return (
     <div className="table-wrap">
@@ -2112,14 +2135,43 @@ function TransactionTable({
                 index
               ) => (
 
-                <tr key={index}>
+                <tr
+                  key={index}
+                  className={
+                    onRowClick
+                      ? "clickable-row"
+                      : undefined
+                  }
+                  onClick={
+                    onRowClick
+                      ? () =>
+                          onRowClick(row)
+                      : undefined
+                  }
+                >
 
                   <td>
-                    <strong>
-                      {getMPName(
-                        row
-                      )}
-                    </strong>
+                    {onMPClick ? (
+                      <strong
+                        className="mp-link"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onMPClick(
+                            getMPName(row)
+                          );
+                        }}
+                      >
+                        {getMPName(
+                          row
+                        )}
+                      </strong>
+                    ) : (
+                      <strong>
+                        {getMPName(
+                          row
+                        )}
+                      </strong>
+                    )}
                   </td>
 
                   <td>
