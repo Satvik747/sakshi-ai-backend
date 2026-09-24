@@ -83,7 +83,4 @@ sakshi-ai-backend/
 └── .gitignore
 ```
 
-## Notes
 
-- This repository is a fork of [Raghav1415/sakshi-ai-backend](https://github.com/Raghav1415/sakshi-ai-backend).
-- CORS is currently open to all origins (`allow_origins=["*"]`) — restrict this before deploying to production.
